@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+
+contract AdvancedDiceGame {
+    using SafeMath for uint256;
+
+    address public owner;
+    IERC20 public token;
+    uint256 public minBet;
+    uint256 public houseEdge; // in percentage (e.g., 5 for 5%)
+    uint256 public maxNumber;
+
+    event BetPlaced(address indexed player, uint256 betAmount, uint256 chosenNumber, uint256 randomNumber, uint256 payout);
+
+    constructor(IERC20 _token, uint256 _minBet, uint256 _houseEdge, uint256 _maxNumber) {
+        owner = msg.sender;
+        token = _token;
+        minBet = _minBet;
+        houseEdge = _houseEdge;
+        maxNumber = _maxNumber;
+    }
+
+    function play(uint256 betAmount, uint256 chosenNumber) external {
+        require(betAmount >= minBet, "Bet amount too low");
+        require(chosenNumber > 0 && chosenNumber <= maxNumber, "Invalid chosen number");
+
+        uint256 playerBalance = token.balanceOf(msg.sender);
+        require(playerBalance >= betAmount, "Insufficient balance");
+
+        uint256 randomNumber = _generateRandomNumber();
+        uint256 payout = _calculatePayout(betAmount, chosenNumber, randomNumber);
+
+        token.transferFrom(msg.sender, address(this), betAmount);
+        if (payout > 0) {
+            token.transfer(msg.sender, payout);
+        }
+
+        emit BetPlaced(msg.sender, betAmount, chosenNumber, randomNumber, payout);
+    }
+
+    function _generateRandomNumber() internal view returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty))) % maxNumber + 1;
+    }
+
+    function _calculatePayout(uint256 betAmount, uint256 chosenNumber, uint256 randomNumber) internal view returns (uint256) {
+        uint256 winProbability = maxNumber.mul(100).div(chosenNumber);
+        uint256 houseCut = betAmount.mul(houseEdge).div(100);
+
+        if (randomNumber <= chosenNumber) {
+            uint256 payout = betAmount.mul(10000).div(winProbability).sub(houseCut);
+            return payout;
+        } else {
+            return 0;
+        }
+    }
+
+    function withdrawToken(uint256 amount) external {
+        require(msg.sender == owner, "Only owner can withdraw");
+        token.transfer(owner, amount);
+    }
+
+    function withdrawETH(uint256 amount) external {
+        require(msg.sender == owner, "Only owner can withdraw");
+        payable(owner).transfer(amount);
+    }
+}
